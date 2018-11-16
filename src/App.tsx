@@ -85,15 +85,22 @@ class App extends Component {
       );
     }
 
-    return (
-      <div className="App">
-
+    const SevenSegDisplay = (props) => {
+      <div>
         <SevenSeg value="0xFF"></SevenSeg>
         <SevenSeg value="0xFF"></SevenSeg>
         <SevenSeg value="0xFF"></SevenSeg>
         <SevenSeg value="0xFF"></SevenSeg>
         <SevenSeg value="0xFF" margin={true}></SevenSeg>
         <SevenSeg value="0xFF"></SevenSeg>
+      </div>
+    }
+
+    return (
+      <div className="App">
+
+        <SevenSegDisplay addr="0x0800" data="0x3F">
+        </SevenSegDisplay>
 
         <header className="App-header">
           <img src={logo} className="App-logo" alt="logo" />
