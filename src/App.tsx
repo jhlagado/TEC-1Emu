@@ -1,106 +1,131 @@
 import React, { Component } from 'react';
 import styled, { css } from 'styled-components'
+import MemoryMap from 'nrf-intel-hex';
 
 import logo from './logo.svg';
 import './App.css';
-import { Z80 } from './z80';
+import { Z80, Z80State } from './z80';
+import { ROM } from './ROM';
+import { cpus } from 'os';
+import { TEC } from './TEC';
+import { Display } from './Display';
 
-class App extends Component {
-  render() {
+const byteToHex = (byte) => (byte & 0xff).toString(16).padStart(2, '0');
+const wordToHex = (word) => (word & 0xffff).toString(16).padStart(4, '0');
 
-    const memory = Array(100).map(() => 0xFF);
-    const io = Array(256);
+const keyMap = {
+  Digit0: 0x00,
+  Digit1: 0x01,
+  Digit2: 0x02,
+  Digit3: 0x03,
+  Digit4: 0x04,
+  Digit5: 0x05,
+  Digit6: 0x06,
+  Digit7: 0x07,
+  Digit8: 0x08,
+  Digit9: 0x09,
+  KeyA: 0x0A,
+  KeyB: 0x0B,
+  KeyC: 0x0C,
+  KeyD: 0x0D,
+  KeyE: 0x0E,
+  KeyF: 0x0F,
+  KeyM: 0x13,
+  Space: 0x13,
+  KeyG: 0x12,
+  Minus: 0x11,
+  ArrowDown: 0x11,
+  Equal: 0x10,
+  ArrowUp: 0x10,
+};
 
-    const cpu = Z80({
-      mem_read: (addr) => memory[addr],
-      mem_write: (addr, value) => memory[addr] = value,
-      io_read: (port) => io[port],
-      io_write: (port, value) => io[port] = value,
-    });
+class App extends Component<any, any> {
 
-    const program = [0x21, 0x50, 0x00, 0x3E, 0x23, 0x77, 0x76]
-    program.forEach((byte, index) => memory[index] = byte);
+  tec = new TEC();
 
-    cpu.reset();
-    function* runner() {
-      while (true) {
-        let result = cpu.run_instruction();
-        if (result === 1)
-          return 1
-        yield result;
+  constructor(props) {
+    super(props);
+    this.tec.loadROM();
+    this.tec.reset();
+    this.state = {
+      tecState: this.tec.state,
+      outPorts: this.tec.outPorts,
+      displays: this.tec.displays,
+      frequency: this.tec.frequency,
+    };
+  }
+
+  doStep() {
+    this.tec.step(this.update);
+  }
+
+  handleKeyDown = (event: KeyboardEvent) => {
+    event.preventDefault();
+
+    if (event.code === 'Escape') {
+      this.tec.reset();
+    }
+    else if (event.code in keyMap) {
+      let keyCode = keyMap[event.code];
+      if (event.shiftKey) {
+        keyCode = keyCode | 0x80;
       }
+      this.tec.inPorts[0] = keyCode;
+      this.tec.interrupt(true, 0);
     }
-
-    const it = runner();
-    let result = it.next();
-    while (!result.done) {
-      console.log(result.value);
-      result = it.next();
+    else {
+      console.log(event, event.code, event.key);
     }
+  }
 
-    const m = memory.map(byte => byte.toString(16).padStart(2, '0'));
-    console.log(m);
+  componentDidMount() {
+    document.addEventListener("keydown", this.handleKeyDown.bind(this));
+    // this.tick();
+    this.tec.run(this.update);
+  }
 
-    const SS = styled.div`
-      width: 36px;
-      margin: 4px;
-      margin-right: 12px;
-      margin-left: ${props => props.margin ? '16px' : null};
-      position relative;
-      display: inline-block;
-    `
-    const SS_A = styled.div`
-      height: 24px;
-      border: 4px solid red;
-      border-top: ${props => !(props.value & 0x01) && 'none'};
-      border-left: ${props => !(props.value & 0x02) && 'none'};
-      border-bottom: ${props => !(props.value & 0x04) && 'none'};
-      border-right: ${props => !(props.value & 0x08) && 'none'};
-    `
-    const SS_DP = styled.div`
-      width: 5px;
-      height: 5px;
-      background-color: red;
-      position: absolute;
-      right: -8px;
-      bottom: -2px;
-      display: ${props => (props.value & 0x10) ? 'block' : 'none'};
-    `
-    const SS_B = styled.div`
-      height: 24px;
-      border: 4px solid red;
-      border-top: none;
-      border-right: ${props => !(props.value & 0x20) && 'none'};
-      border-left: ${props => !(props.value & 0x40) && 'none'};
-      border-bottom: ${props => !(props.value & 0x80) && 'none'};
-    `
+  componentWillUnmount() {
+    document.removeEventListener("keydown", this.handleKeyDown.bind(this));
+  }
 
-    const SevenSeg = (props) => {
-      return (
-        <SS {...props}>
-          <SS_A {...props}></SS_A>
-          <SS_B {...props}></SS_B>
-          <SS_DP {...props}></SS_DP>
-        </SS>
-      );
-    }
+  // tick = () => {
+  //   this.tec.run(this.update);
+  // }
 
-    const SevenSegDisplay = (props) => {
-      <div>
-        <SevenSeg value="0xFF"></SevenSeg>
-        <SevenSeg value="0xFF"></SevenSeg>
-        <SevenSeg value="0xFF"></SevenSeg>
-        <SevenSeg value="0xFF"></SevenSeg>
-        <SevenSeg value="0xFF" margin={true}></SevenSeg>
-        <SevenSeg value="0xFF"></SevenSeg>
-      </div>
-    }
+  update = () => {
+    this.setState({
+      tecState: this.tec.state,
+      inPorts: this.tec.outPorts,
+      outPorts: this.tec.outPorts,
+      digits: this.tec.digits,
+      segments: this.tec.segments,
+      displays: this.tec.displays,
+      frequency: this.tec.frequency,
+    });
+  }
 
+  render() {
+    const PC = this.state.tecState && this.state.tecState.pc;
+    const A = this.state.tecState && this.state.tecState.a;
+    const H = this.state.tecState && this.state.tecState.h;
+    const L = this.state.tecState && this.state.tecState.l;
+    const HL = H << 8 | L;
+    const MEM = PC && this.tec.memory.slice(PC, PC + 4).map(byteToHex);
+    const digits = this.state.digits || 0;
+    const segments = this.state.segments || 0;
+    const port2 = this.state.ports && this.state.ports[2];
+    const frequency = this.state.frequency;
     return (
       <div className="App">
 
-        <SevenSegDisplay addr="0x0800" data="0x3F">
-        </SevenSegDisplay>
+        <div>PC: {wordToHex(PC)}</div>
+        <div>A: {byteToHex(A)}</div>
+        <div>HL: {byteToHex(HL)}</div>
+        <div>MEM(PC): {MEM}</div>
+        <div>digits: {digits.toString(2).padStart(8, '0')}</div>
+        <div>segments: {segments.toString(2).padStart(8, '0')}</div>
+        <div>Speaker: {frequency}</div>
+        <Display value={this.state.displays}></Display>
 
         <header className="App-header">
           <img src={logo} className="App-logo" alt="logo" />

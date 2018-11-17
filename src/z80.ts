@@ -23,7 +23,7 @@
 ///  or at http://opensource.org/licenses/MIT
 ///////////////////////////////////////////////////////////////////////////////
 
-interface Z80Flags {
+export interface Z80Flags {
     S: number;
     Z: number;
     Y: number;
@@ -34,7 +34,7 @@ interface Z80Flags {
     C: number;
 }
 
-interface Z80State {
+export interface Z80State {
     b: number;
     a: number;
     c: number;
@@ -72,6 +72,7 @@ interface iZ80 {
     reset: () => void;
     run_instruction: () => number;
     interrupt:(non_maskable, data) => void;
+    run: () => any;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -322,6 +323,52 @@ export function Z80(this: any, coreParameter): iZ80 {
             return 1;
         }
     };
+
+    let run = function* () {
+        let counter = 0;
+        while (true) {
+
+            if (counter === 1000) {
+                counter = 0;
+                // yield {opcode: 0x00};
+            }
+            counter++;
+
+            if (!halted) {
+                var doing_delayed_di = false, doing_delayed_ei = false;
+                if (do_delayed_di) {
+                    do_delayed_di = false;
+                    doing_delayed_di = true;
+                }
+                else if (do_delayed_ei) {
+                    do_delayed_ei = false;
+                    doing_delayed_ei = true;
+                }
+
+                r = (r & 0x80) | (((r & 0x7f) + 1) & 0x7f);
+                var opcode = core.mem_read(pc);
+                if (opcode === 0xD3) {
+                    pc = (pc + 1) & 0xffff;
+                    const port = core.mem_read(pc);
+                    const value = a;
+                    pc = (pc + 1) & 0xffff;
+                    yield {opcode, port, value}
+                }
+                else {
+                    decode_instruction(opcode);
+                    pc = (pc + 1) & 0xffff;
+                }
+                if (doing_delayed_di) {
+                    iff1 = 0;
+                    iff2 = 0;
+                }
+                else if (doing_delayed_ei) {
+                    iff1 = 1;
+                    iff2 = 1;
+                }
+            }
+        }
+    }
 
     ///////////////////////////////////////////////////////////////////////////////
     /// @public interrupt
@@ -3027,6 +3074,7 @@ export function Z80(this: any, coreParameter): iZ80 {
         setState,
         reset,
         run_instruction,
-        interrupt
+        interrupt,
+        run,
     };
 }
